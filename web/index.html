@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Movie Duplicate Cleanup</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Movie Duplicate Cleanup</h1>
+    <p style="margin:0;color:var(--muted);font-size:0.9rem">
+      Review duplicate groups, choose what to keep, quarantine the rest.
+    </p>
+    <div class="summary" id="summary">
+      <span>Loading…</span>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <button class="btn-primary" id="btn-quarantine" disabled>Quarantine selected</button>
+    <button class="btn-secondary" id="btn-rescan">Rescan library</button>
+  </div>
+  <div id="scan-progress-panel" class="scan-progress-panel is-hidden">
+    <div class="scan-progress-header">
+      <span id="scan-progress-label">Scanning…</span>
+      <div class="scan-progress-header-right">
+        <span id="scan-progress-count"></span>
+        <button type="button" class="btn-cancel-scan is-hidden" id="btn-cancel-scan">Cancel scan</button>
+      </div>
+    </div>
+    <div class="scan-progress-bar-track">
+      <div id="scan-progress-bar" class="scan-progress-bar"></div>
+    </div>
+    <p id="scan-progress-message" class="scan-progress-message"></p>
+  </div>
+
+  <main>
+    <div id="message" class="message"></div>
+    <div id="empty" class="empty-state" style="display:none">
+      <p>No scan data found.</p>
+      <p>Run <code>python scan.py</code> then refresh this page.</p>
+    </div>
+    <div id="content" style="display:none">
+      <h2>Duplicate groups</h2>
+      <div id="groups"></div>
+      <h2>Unresolved / low confidence</h2>
+      <p style="color:var(--muted);font-size:0.85rem;margin-top:0">
+        These items were not grouped automatically. Check any you want to move to quarantine.
+      </p>
+      <div id="unresolved"></div>
+    </div>
+  </main>
+
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Confirm quarantine</h3>
+        <p>The following will be <strong>moved</strong> to the quarantine folder (not permanently deleted):</p>
+      </div>
+      <div class="modal-body">
+        <ul id="modal-paths"></ul>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn-danger" id="modal-confirm">Move to quarantine</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=7"></script>
+</body>
+</html>
