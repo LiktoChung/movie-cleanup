@@ -113,6 +113,7 @@ def main() -> int:
         print(f"  Duplicate groups:  {s['duplicate_groups']} ({s['duplicate_items']} items)")
         print(f"  Unresolved:        {s['unresolved']}")
         print(f"  Empty folders:     {s.get('empty_folders', 0)}")
+        print(f"  Folder fixups:     {s.get('folder_fixups', 0)}")
         print()
         print("Run: python serve.py")
         return 0

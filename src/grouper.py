@@ -4,6 +4,7 @@ import re
 from collections import defaultdict
 
 from src.scanner import LibraryItem, item_to_dict
+from src.folder_fixup import folder_fixup_issues
 
 
 def _resolution_score(item: LibraryItem) -> int:
@@ -32,6 +33,33 @@ def _keeper_score(item: LibraryItem) -> int:
 def assign_keeper_scores(items: list[LibraryItem]) -> None:
     for item in items:
         item.keeper_score = _keeper_score(item)
+
+
+def build_folder_fixups(items: list[LibraryItem]) -> list[dict]:
+    fixups: list[dict] = []
+    for item in items:
+        if item.item_type != "folder":
+            continue
+        issues = folder_fixup_issues(
+            item.raw_name,
+            video_subfolder=item.video_subfolder,
+            proposed_name=item.proposed_folder_name,
+        )
+        if not issues:
+            continue
+        fixups.append(
+            {
+                "path": item.path,
+                "name": item.raw_name,
+                "issues": issues,
+                "video_subfolder": item.video_subfolder,
+                "proposed_folder_name": item.proposed_folder_name,
+                "parsed_title": item.parsed_title,
+                "parsed_year": item.parsed_year,
+            }
+        )
+    fixups.sort(key=lambda f: (f.get("name") or "").lower())
+    return fixups
 
 
 def build_duplicate_groups(
@@ -80,6 +108,8 @@ def build_duplicate_groups(
         key=lambda g: (g.get("title") or "").lower(),
     )
 
+    folder_fixups = build_folder_fixups(items)
+
     return {
         "summary": {
             "total_items": len(items),
@@ -87,9 +117,11 @@ def build_duplicate_groups(
             "duplicate_items": sum(len(g["items"]) for g in duplicate_groups),
             "unresolved": len(unresolved),
             "empty_folders": len(empty_folders),
+            "folder_fixups": len(folder_fixups),
         },
         "duplicate_groups": duplicate_groups,
         "unresolved": [item_to_dict(i) for i in unresolved],
         "empty_folders": empty_folders,
+        "folder_fixups": folder_fixups,
         "all_items": [item_to_dict(i) for i in items],
     }

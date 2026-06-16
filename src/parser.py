@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from pathlib import Path
 
 from guessit import guessit
 
@@ -229,6 +230,29 @@ def _spacing_variants(title: str) -> list[str]:
     if spaced == title:
         return []
     return [spaced]
+
+
+def has_site_prefix(raw_name: str) -> bool:
+    return bool(_SITE_PREFIX_RE.search(raw_name))
+
+
+def proposed_movie_folder_name(
+    raw_name: str,
+    primary_video: Path | None = None,
+    *,
+    parsed_title: str | None = None,
+    parsed_year: int | None = None,
+) -> str | None:
+    parsed = parse_name(raw_name)
+    if not parsed.title and primary_video is not None:
+        parsed = parse_name(primary_video.stem)
+    title = parsed.title or clean_folder_title(raw_name)
+    if not title or len(title.strip()) < 2:
+        return None
+    year = parsed.year or parsed_year
+    from src.library_rename import canonical_folder_name
+
+    return canonical_folder_name(title.strip(), year)
 
 
 def clean_folder_title(raw_name: str) -> str:

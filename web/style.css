@@ -349,6 +349,65 @@ h2:first-child {
   padding: 0.35rem 0.75rem;
 }
 
+.folder-fixups-table .fixup-meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+  min-width: 200px;
+}
+
+.fixup-detail {
+  margin-bottom: 0.2rem;
+}
+
+.fixup-actions-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 220px;
+}
+
+.fixup-rename-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 180px;
+}
+
+.fixup-rename-input {
+  flex: 1 1 140px;
+  min-width: 120px;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.fixup-options-row.is-hidden {
+  display: none;
+}
+
+.fixup-rename-panel {
+  padding: 0.5rem 0 0.25rem;
+  border-top: 1px dashed var(--border);
+}
+
+.fixup-rename-hint {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.folder-fixups-table .btn-tmdb-search-fixup,
+.folder-fixups-table .btn-folder-fixup {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.6rem;
+  white-space: nowrap;
+}
+
 .empty-folders-filter-label {
   display: flex;
   align-items: center;

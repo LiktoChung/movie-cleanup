@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import VIDEO_EXTENSIONS
-from src.nfo import find_nfo, parse_nfo
-from src.parser import parse_name
+from src.nfo import find_nfo_near_videos, parse_nfo
+from src.parser import parse_name, proposed_movie_folder_name
 
 
 @dataclass
@@ -103,6 +103,8 @@ class LibraryItem:
     group_key: str | None = None
     suggested_keeper: bool = False
     keeper_score: int = 0
+    video_subfolder: str | None = None
+    proposed_folder_name: str | None = None
 
 
 def _is_video(path: Path) -> bool:
@@ -119,6 +121,46 @@ def collect_videos(directory: Path) -> list[Path]:
     except OSError:
         pass
     return videos
+
+
+def find_folder_videos(directory: Path) -> tuple[list[Path], str | None]:
+    """
+    Videos in folder root, or from a single immediate subfolder.
+    Returns (videos, subfolder_name) when videos only live in one subdir.
+    """
+    videos = collect_videos(directory)
+    if videos:
+        return videos, None
+
+    hits: list[tuple[Path, list[Path]]] = []
+    try:
+        for entry in directory.iterdir():
+            if not entry.is_dir() or entry.name.startswith("."):
+                continue
+            sub_videos = collect_videos(entry)
+            if sub_videos:
+                hits.append((entry, sub_videos))
+    except OSError:
+        return [], None
+
+    if not hits:
+        return [], None
+
+    if len(hits) == 1:
+        subdir, sub_videos = hits[0]
+        return sub_videos, subdir.name
+
+    def total_size(vids: list[Path]) -> int:
+        size = 0
+        for v in vids:
+            try:
+                size += v.stat().st_size
+            except OSError:
+                pass
+        return size
+
+    best_dir, best_videos = max(hits, key=lambda pair: total_size(pair[1]))
+    return best_videos, best_dir.name
 
 
 def _dir_size(path: Path) -> int:
@@ -223,22 +265,24 @@ def _build_file_item(path: Path) -> LibraryItem:
 
 
 def _build_folder_item(path: Path) -> LibraryItem | None:
-    videos = collect_videos(path)
+    videos, video_subfolder = find_folder_videos(path)
     if not videos:
         return None
 
     videos.sort(key=lambda p: p.stat().st_size if p.exists() else 0, reverse=True)
     primary = videos[0]
-    try:
-        primary_size = primary.stat().st_size
-    except OSError:
-        primary_size = 0
 
     size = _dir_size(path)
-    nfo_path = find_nfo(path)
+    nfo_path = find_nfo_near_videos(path, videos)
     nfo_meta = parse_nfo(nfo_path) if nfo_path else None
 
     title, year, quality = _parse_item_name(path.name, primary)
+    proposed = proposed_movie_folder_name(
+        path.name,
+        primary,
+        parsed_title=title,
+        parsed_year=year,
+    )
 
     item = LibraryItem(
         path=str(path),
@@ -251,6 +295,8 @@ def _build_folder_item(path: Path) -> LibraryItem | None:
         parsed_title=title,
         parsed_year=year,
         quality_hint=quality,
+        video_subfolder=video_subfolder,
+        proposed_folder_name=proposed,
     )
 
     if nfo_meta and nfo_path:
@@ -290,6 +336,8 @@ def item_to_dict(item: LibraryItem) -> dict:
         "group_key": item.group_key,
         "suggested_keeper": item.suggested_keeper,
         "keeper_score": item.keeper_score,
+        "video_subfolder": item.video_subfolder,
+        "proposed_folder_name": item.proposed_folder_name,
     }
 
 
@@ -320,4 +368,6 @@ def dict_to_item(data: dict) -> LibraryItem:
         group_key=data.get("group_key"),
         suggested_keeper=data.get("suggested_keeper", False),
         keeper_score=data.get("keeper_score", 0),
+        video_subfolder=data.get("video_subfolder"),
+        proposed_folder_name=data.get("proposed_folder_name"),
     )

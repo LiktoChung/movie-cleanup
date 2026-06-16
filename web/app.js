@@ -5,6 +5,8 @@ const state = {
   tmdbOpen: new Set(), // unresolved item paths with TMDB search panel open
   emptyFolderSelection: new Set(),
   emptyFolderFilter: "all", // all | no_files
+  fixupRenameOpen: new Set(),
+  fixupCustomNames: new Map(), // folder path -> chosen rename
 };
 
 function apiErrorDetail(data, status) {
@@ -46,6 +48,7 @@ function updateSummary() {
     <span><strong>${s.duplicate_items ?? 0}</strong> items in duplicates</span>
     <span><strong>${s.unresolved ?? 0}</strong> unresolved</span>
     <span><strong>${s.empty_folders ?? 0}</strong> empty folders</span>
+    <span><strong>${s.folder_fixups ?? 0}</strong> folder fixups</span>
   `;
 }
 
@@ -58,6 +61,7 @@ function recalcSummary() {
     duplicate_items: groups.reduce((n, g) => n + g.items.length, 0),
     unresolved: (state.scan.unresolved || []).length,
     empty_folders: (state.scan.empty_folders || []).length,
+    folder_fixups: (state.scan.folder_fixups || []).length,
   };
 }
 
@@ -67,6 +71,9 @@ function renderFromState() {
   document.getElementById("groups").innerHTML = groupsHtml();
   document.getElementById("unresolved").innerHTML = renderUnresolved(
     state.scan.unresolved || []
+  );
+  document.getElementById("folder-fixups").innerHTML = renderFolderFixups(
+    state.scan.folder_fixups || []
   );
   document.getElementById("empty-folders").innerHTML = renderEmptyFolders(
     state.scan.empty_folders || []
@@ -87,6 +94,193 @@ function emptyFolderReasonLabel(reason) {
   if (reason === "no_files") return "Completely empty";
   if (reason === "no_video") return "No video files";
   return reason || "—";
+}
+
+function fixupIssueLabels(issues) {
+  return (issues || [])
+    .map((i) => {
+      if (i === "nested_video") return "Video in subfolder";
+      if (i === "rename") return "Site / release name";
+      return i;
+    })
+    .join(", ");
+}
+
+function folderNameFromTmdb(title, year) {
+  if (!title) return "";
+  return year ? `${title} (${year})` : title;
+}
+
+function getFixupRenameName(fixup) {
+  if (state.fixupCustomNames.has(fixup.path)) {
+    return state.fixupCustomNames.get(fixup.path);
+  }
+  return fixup.proposed_folder_name || "";
+}
+
+function renderFixupOptionsRow(f) {
+  const open = state.fixupRenameOpen.has(f.path);
+  const defaultQuery =
+    f.parsed_title ||
+    f.name.replace(/^www\.\S+\s*[-–—]\s*/i, "").trim() ||
+    f.name;
+  return `
+    <tr class="fixup-options-row ${open ? "" : "is-hidden"}" data-path="${escapeAttr(f.path)}">
+      <td colspan="4">
+        <div class="fixup-rename-panel">
+          <div class="tmdb-search-form">
+            <input type="text" class="tmdb-query-fixup" value="${escapeAttr(defaultQuery)}" placeholder="Search TMDB…" />
+            <input type="number" class="tmdb-year-fixup" placeholder="Year" value="${f.parsed_year || ""}" min="1900" max="2100" />
+            <button type="button" class="btn-secondary btn-tmdb-run-fixup" data-path="${escapeAttr(f.path)}">Search TMDB</button>
+          </div>
+          <p class="fixup-rename-hint">Pick a TMDB result below, or edit the folder name in the row above.</p>
+          <div class="tmdb-results-fixup"></div>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function renderFolderFixups(fixups) {
+  if (!fixups.length) {
+    return '<p class="empty-state">None</p>';
+  }
+
+  const rows = fixups
+    .map((f) => {
+      const flatten = (f.issues || []).includes("nested_video");
+      const rename = (f.issues || []).includes("rename");
+      const sub = f.video_subfolder
+        ? `<div class="fixup-detail">Subfolder: ${escapeHtml(f.video_subfolder)}/</div>`
+        : "";
+      const renameName = getFixupRenameName(f);
+      const renameControls = rename
+        ? `
+        <div class="fixup-rename-controls">
+          <input type="text" class="fixup-rename-input" data-path="${escapeAttr(f.path)}"
+            value="${escapeAttr(renameName)}" placeholder="Folder name…" title="Edit folder name" />
+          <button type="button" class="btn-secondary btn-tmdb-search-fixup" data-path="${escapeAttr(f.path)}">TMDB</button>
+        </div>
+      `
+        : "";
+      const proposed = f.proposed_folder_name
+        ? `<div class="fixup-detail">Suggested: ${escapeHtml(f.proposed_folder_name)}</div>`
+        : "";
+      return `
+    <tr class="fixup-row" data-path="${escapeAttr(f.path)}">
+      <td class="path-cell">${escapeHtml(f.path)}</td>
+      <td>${escapeHtml(fixupIssueLabels(f.issues))}</td>
+      <td class="fixup-meta">${sub}${proposed}</td>
+      <td class="fixup-actions-cell">
+        ${renameControls}
+        <button type="button" class="btn-secondary btn-folder-fixup"
+          data-path="${escapeAttr(f.path)}"
+          data-flatten="${flatten ? "1" : "0"}"
+          data-rename="${rename ? "1" : "0"}">
+          Fix
+        </button>
+      </td>
+    </tr>
+    ${rename ? renderFixupOptionsRow(f) : ""}
+  `;
+    })
+    .join("");
+
+  return `
+    <table class="items-table unresolved-table folder-fixups-table">
+      <thead>
+        <tr>
+          <th>Path</th>
+          <th>Issue</th>
+          <th>Suggested fix</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function fixupOptionsRowFor(fixupRow) {
+  const next = fixupRow?.nextElementSibling;
+  return next?.classList?.contains("fixup-options-row") ? next : null;
+}
+
+function getFixupRenameInputValueForRow(fixupRow) {
+  if (!fixupRow) return "";
+  const input = fixupRow.querySelector(".fixup-rename-input");
+  const fromInput = input?.value.trim();
+  if (fromInput) return fromInput;
+  return state.fixupCustomNames.get(fixupRow.dataset.path) || "";
+}
+
+function setFixupRenameNameForRow(fixupRow, name) {
+  if (!fixupRow) return;
+  const path = fixupRow.dataset.path;
+  state.fixupCustomNames.set(path, name);
+  const input = fixupRow.querySelector(".fixup-rename-input");
+  if (input) input.value = name;
+}
+
+async function applyFolderFixup(btn) {
+  const row = btn.closest(".fixup-row");
+  const path = row?.dataset.path || btn.dataset.path;
+  if (!path) return;
+  const flatten = btn.dataset.flatten === "1";
+  const rename = btn.dataset.rename === "1";
+  const proposed = rename ? getFixupRenameInputValueForRow(row) : null;
+  if (rename && !proposed) {
+    showMessage("Enter a folder name or pick one from TMDB.", "error");
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "Fixing…";
+  try {
+    const res = await fetch("/api/folder-fixup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path,
+        flatten,
+        rename,
+        proposed_folder_name: proposed || null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(apiErrorDetail(data, res.status));
+    showMessage(`${data.message || "Done"}. Rescan library to refresh.`);
+    if (state.scan?.folder_fixups) {
+      state.fixupCustomNames.delete(path);
+      state.fixupRenameOpen.delete(path);
+      state.scan.folder_fixups = state.scan.folder_fixups.filter(
+        (f) => normalizePath(f.path) !== normalizePath(path)
+      );
+      recalcSummary();
+      renderFromState();
+    }
+  } catch (err) {
+    showMessage(err.message, "error");
+    btn.disabled = false;
+    btn.textContent = "Fix";
+  }
+}
+
+function getFixupRenameInputValue(itemPath) {
+  const row = document.querySelector(
+    `.fixup-row[data-path="${CSS.escape(itemPath)}"]`
+  );
+  return getFixupRenameInputValueForRow(row);
+}
+
+function setFixupRenameName(itemPath, name) {
+  const rows = document.querySelectorAll(".fixup-row");
+  for (const row of rows) {
+    if (row.dataset.path === itemPath) {
+      setFixupRenameNameForRow(row, name);
+      return;
+    }
+  }
+  state.fixupCustomNames.set(itemPath, name);
 }
 
 function getFilteredEmptyFolders(folders) {
@@ -520,11 +714,12 @@ function renderUnresolved(items) {
   `;
 }
 
-function renderTmdbResults(container, results, itemPath) {
+function renderTmdbResults(container, results, itemPath, mode = "unresolved") {
   if (!results?.length) {
     container.innerHTML = '<p class="tmdb-no-results">No results on TMDB.</p>';
     return;
   }
+  const isFixup = mode === "fixup";
   container.innerHTML = results
     .map(
       (r) => `
@@ -541,14 +736,61 @@ function renderTmdbResults(container, results, itemPath) {
           <a href="https://www.themoviedb.org/movie/${r.tmdb_id}" target="_blank" rel="noopener" class="tmdb-link">TMDB</a>
         </div>
         ${tmdbDuplicateBadge(r.duplicate)}
-        <button type="button" class="btn-secondary btn-tmdb-apply"
+        <button type="button" class="btn-secondary ${isFixup ? "btn-tmdb-use-rename" : "btn-tmdb-apply"}"
           data-tmdb-id="${r.tmdb_id}"
-          data-path="${escapeAttr(itemPath)}">Use this match</button>
+          data-path="${escapeAttr(itemPath)}"
+          data-folder-name="${escapeAttr(folderNameFromTmdb(r.title, r.year))}">
+          ${isFixup ? "Use this name" : "Use this match"}
+        </button>
       </div>
     </div>
   `
     )
     .join("");
+}
+
+async function runTmdbSearchFixup(optionsRow) {
+  if (!optionsRow) return;
+  const itemPath = optionsRow.dataset.path;
+  const query = optionsRow.querySelector(".tmdb-query-fixup")?.value.trim();
+  if (!query || query.length < 2) {
+    showMessage("Enter at least 2 characters to search TMDB.", "error");
+    return;
+  }
+  const yearRaw = optionsRow.querySelector(".tmdb-year-fixup")?.value;
+  const year = yearRaw ? parseInt(yearRaw, 10) : null;
+  const resultsEl = optionsRow.querySelector(".tmdb-results-fixup");
+  resultsEl.innerHTML = '<p class="tmdb-loading">Searching TMDB…</p>';
+
+  const params = new URLSearchParams({ q: query, item_path: itemPath });
+  if (year && !Number.isNaN(year)) params.set("year", String(year));
+
+  try {
+    const res = await fetch(`/api/tmdb/search?${params}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(apiErrorDetail(data, res.status));
+    renderTmdbResults(resultsEl, data.results, itemPath, "fixup");
+  } catch (err) {
+    resultsEl.innerHTML = `<p class="tmdb-error">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function toggleFixupTmdbPanel(btn) {
+  const fixupRow = btn.closest(".fixup-row");
+  const row = fixupOptionsRowFor(fixupRow);
+  if (!row) return;
+  const itemPath = row.dataset.path;
+  const opening = row.classList.contains("is-hidden");
+  if (opening) {
+    state.fixupRenameOpen.add(itemPath);
+    row.classList.remove("is-hidden");
+    if (!row.querySelector(".tmdb-results-fixup")?.innerHTML.trim()) {
+      runTmdbSearchFixup(row);
+    }
+  } else {
+    state.fixupRenameOpen.delete(itemPath);
+    row.classList.add("is-hidden");
+  }
 }
 
 async function runTmdbSearch(itemPath) {
@@ -805,6 +1047,47 @@ function bindStaticEvents() {
 
   document.getElementById("empty-modal-cancel").addEventListener("click", closeEmptyModal);
   document.getElementById("empty-modal-confirm").addEventListener("click", confirmEmptyRemove);
+
+  document.getElementById("folder-fixups").addEventListener("click", (e) => {
+    if (e.target.classList.contains("btn-folder-fixup")) {
+      applyFolderFixup(e.target);
+      return;
+    }
+    if (e.target.classList.contains("btn-tmdb-search-fixup")) {
+      toggleFixupTmdbPanel(e.target);
+      return;
+    }
+    if (e.target.classList.contains("btn-tmdb-run-fixup")) {
+      runTmdbSearchFixup(e.target.closest(".fixup-options-row"));
+      return;
+    }
+    if (e.target.classList.contains("btn-tmdb-use-rename")) {
+      const name = e.target.dataset.folderName;
+      const optionsRow = e.target.closest(".fixup-options-row");
+      const fixupRow = optionsRow?.previousElementSibling;
+      if (name && fixupRow?.classList.contains("fixup-row")) {
+        setFixupRenameNameForRow(fixupRow, name);
+        showMessage(`Folder name set to "${name}". Click Fix when ready.`);
+      }
+    }
+  });
+
+  document.getElementById("folder-fixups").addEventListener("input", (e) => {
+    if (e.target.classList.contains("fixup-rename-input")) {
+      const row = e.target.closest(".fixup-row");
+      if (row) state.fixupCustomNames.set(row.dataset.path, e.target.value);
+    }
+  });
+
+  document.getElementById("folder-fixups").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const panel = e.target.closest(".fixup-rename-panel");
+    if (!panel) return;
+    const row = panel.closest(".fixup-options-row");
+    if (!row) return;
+    e.preventDefault();
+    runTmdbSearchFixup(row.dataset.path);
+  });
 }
 
 function collectQuarantinePaths() {

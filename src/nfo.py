@@ -45,6 +45,21 @@ def find_nfo(directory: Path) -> Path | None:
     return None
 
 
+def find_nfo_near_videos(directory: Path, videos: list[Path]) -> Path | None:
+    """Find NFO in folder root or next to the primary video."""
+    nfo = find_nfo(directory)
+    if nfo:
+        return nfo
+    for video in videos:
+        sibling = video.with_suffix(".nfo")
+        if sibling.is_file():
+            return sibling
+        parent_nfo = find_nfo(video.parent)
+        if parent_nfo:
+            return parent_nfo
+    return None
+
+
 def parse_nfo(path: Path) -> NfoMetadata:
     meta = NfoMetadata(path=path)
     try:

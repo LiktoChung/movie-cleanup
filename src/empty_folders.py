@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 from src.config import LIBRARY_PATH, SCAN_JSON
-from src.scanner import collect_videos
+from src.scanner import find_folder_videos
 
 
 def _norm_path(path: str) -> str:
@@ -73,7 +73,7 @@ def remove_empty_folders(
             )
             continue
 
-        if collect_videos(src):
+        if find_folder_videos(src)[0]:
             results.append(
                 {
                     "path": src_str,

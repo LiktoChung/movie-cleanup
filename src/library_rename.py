@@ -31,6 +31,14 @@ def canonical_folder_name(title: str, year: int | None) -> str:
     return name or "Unknown"
 
 
+def sanitize_folder_name(name: str) -> str:
+    """Clean a user-provided folder name for Windows paths."""
+    cleaned = _INVALID_WIN_CHARS.sub("", name or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = _TRAILING_DOTS.sub("", cleaned)
+    return cleaned
+
+
 def _unique_folder_path(parent: Path, name: str) -> Path:
     candidate = parent / name
     if not candidate.exists():

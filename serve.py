@@ -17,6 +17,8 @@ from pydantic import BaseModel
 
 from src.config import DATA_DIR, LIBRARY_PATH, PORT, PROJECT_ROOT, SCAN_JSON, TMDB_API_KEY
 from src.empty_folders import remove_empty_folders, remove_empty_folders_from_scan
+from src.folder_fixup import apply_folder_fixup
+from src.library_rename import sanitize_folder_name
 from src.quarantine import quarantine_paths
 from src.scan_progress import ScanProgress, is_cancel_requested, read_progress, request_cancel
 from src.scan_store import _norm_path, remove_items_from_scan
@@ -45,6 +47,13 @@ class ApplyTmdbMatchRequest(BaseModel):
 
 class RemoveEmptyFoldersRequest(BaseModel):
     paths: list[str]
+
+
+class FolderFixupRequest(BaseModel):
+    path: str
+    flatten: bool = True
+    rename: bool = True
+    proposed_folder_name: str | None = None
 
 
 def _load_scan() -> dict:
@@ -242,6 +251,66 @@ def api_remove_empty_folders(body: RemoveEmptyFoldersRequest) -> dict:
         "failed": len(failed),
         "results": results,
         "scan": _load_scan(),
+    }
+
+
+@app.post("/api/folder-fixup")
+def api_folder_fixup(body: FolderFixupRequest) -> dict:
+    scan_data = _load_scan()
+    allowed = {
+        _norm_path(f["path"])
+        for f in scan_data.get("folder_fixups", [])
+    }
+    if _norm_path(body.path) not in allowed:
+        raise HTTPException(status_code=400, detail="Path is not in the folder fixup list")
+
+    library_path = scan_data.get("library_path")
+    library_root = Path(library_path) if library_path else LIBRARY_PATH
+    folder = Path(body.path)
+    try:
+        folder.resolve().relative_to(library_root.resolve())
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Path is outside the library") from None
+
+    fixup = scan_data.get("folder_fixups", [])
+    entry = next((f for f in fixup if _norm_path(f["path"]) == _norm_path(body.path)), None)
+    proposed: str | None = None
+    if body.rename:
+        if body.proposed_folder_name is not None:
+            proposed = sanitize_folder_name(body.proposed_folder_name.strip())
+        else:
+            raw = (entry or {}).get("proposed_folder_name")
+            proposed = sanitize_folder_name(raw) if raw else None
+        if not proposed:
+            raise HTTPException(status_code=400, detail="Folder name is required for rename")
+
+    result = apply_folder_fixup(
+        body.path,
+        flatten=body.flatten,
+        rename=body.rename,
+        proposed_name=proposed,
+    )
+    if result.error:
+        raise HTTPException(status_code=400, detail=result.error)
+
+    parts: list[str] = []
+    if result.flattened:
+        parts.append("flattened")
+    if result.renamed:
+        parts.append(f'renamed to "{result.new_name}"')
+
+    return {
+        "status": "ok",
+        "result": {
+            "path": body.path,
+            "new_path": result.new_path or body.path,
+            "flattened": result.flattened,
+            "renamed": result.renamed,
+            "new_name": result.new_name,
+            "moved_files": (result.flatten.moved_files if result.flatten else None),
+            "removed_junk": (result.flatten.removed_junk if result.flatten else None),
+        },
+        "message": " and ".join(parts) if parts else "No changes needed",
     }
 
 
