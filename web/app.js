@@ -3,6 +3,8 @@ const state = {
   selections: new Map(), // groupKey -> { keeper, quarantine: Set }
   unresolvedQuarantine: new Set(), // paths selected from unresolved section
   tmdbOpen: new Set(), // unresolved item paths with TMDB search panel open
+  emptyFolderSelection: new Set(),
+  emptyFolderFilter: "all", // all | no_files
 };
 
 function apiErrorDetail(data, status) {
@@ -43,6 +45,7 @@ function updateSummary() {
     <span><strong>${s.duplicate_groups ?? 0}</strong> duplicate groups</span>
     <span><strong>${s.duplicate_items ?? 0}</strong> items in duplicates</span>
     <span><strong>${s.unresolved ?? 0}</strong> unresolved</span>
+    <span><strong>${s.empty_folders ?? 0}</strong> empty folders</span>
   `;
 }
 
@@ -54,6 +57,7 @@ function recalcSummary() {
     duplicate_groups: groups.length,
     duplicate_items: groups.reduce((n, g) => n + g.items.length, 0),
     unresolved: (state.scan.unresolved || []).length,
+    empty_folders: (state.scan.empty_folders || []).length,
   };
 }
 
@@ -64,7 +68,11 @@ function renderFromState() {
   document.getElementById("unresolved").innerHTML = renderUnresolved(
     state.scan.unresolved || []
   );
+  document.getElementById("empty-folders").innerHTML = renderEmptyFolders(
+    state.scan.empty_folders || []
+  );
   updateQuarantineButton();
+  updateEmptyFolderButton();
 }
 
 function groupsHtml() {
@@ -73,6 +81,193 @@ function groupsHtml() {
     return '<p class="empty-state">No duplicate groups</p>';
   }
   return groups.map(renderGroup).join("");
+}
+
+function emptyFolderReasonLabel(reason) {
+  if (reason === "no_files") return "Completely empty";
+  if (reason === "no_video") return "No video files";
+  return reason || "—";
+}
+
+function getFilteredEmptyFolders(folders) {
+  if (state.emptyFolderFilter === "no_files") {
+    return folders.filter((f) => f.reason === "no_files");
+  }
+  return folders;
+}
+
+function renderEmptyFolderFiles(folder) {
+  if (folder.reason === "no_files" || !folder.files?.length) {
+    return "";
+  }
+  const items = folder.files
+    .map((name) => `<li>${escapeHtml(name)}</li>`)
+    .join("");
+  return `
+    <tr class="empty-folder-files-row">
+      <td></td>
+      <td colspan="4">
+        <div class="empty-folder-files">
+          <span class="empty-folder-files-label">Contents:</span>
+          <ul>${items}</ul>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function renderEmptyFolders(folders) {
+  const filtered = getFilteredEmptyFolders(folders);
+  if (!folders.length) {
+    return '<p class="empty-state">None</p>';
+  }
+  if (!filtered.length) {
+    return `
+      <div class="empty-folders-toolbar">
+        <label class="empty-folders-filter-label">
+          Show
+          <select id="empty-folders-filter" class="empty-folders-filter">
+            <option value="all" ${state.emptyFolderFilter === "all" ? "selected" : ""}>All empty folders</option>
+            <option value="no_files" ${state.emptyFolderFilter === "no_files" ? "selected" : ""}>Completely empty only</option>
+          </select>
+        </label>
+      </div>
+      <p class="empty-state">No folders match this filter.</p>
+    `;
+  }
+
+  const rows = filtered
+    .map((folder) => {
+      const checked = state.emptyFolderSelection.has(folder.path);
+      return `
+    <tr class="empty-folder-row">
+      <td>
+        <input type="checkbox" class="empty-folder-cb"
+          data-path="${escapeAttr(folder.path)}"
+          ${checked ? "checked" : ""} />
+      </td>
+      <td class="path-cell">${escapeHtml(folder.path)}</td>
+      <td>${escapeHtml(folder.name)}</td>
+      <td>${escapeHtml(emptyFolderReasonLabel(folder.reason))}</td>
+      <td>${folder.file_count ?? 0}</td>
+    </tr>
+    ${renderEmptyFolderFiles(folder)}
+  `;
+    })
+    .join("");
+
+  const allChecked =
+    filtered.length > 0 &&
+    filtered.every((f) => state.emptyFolderSelection.has(f.path));
+
+  const completelyEmptyCount = folders.filter((f) => f.reason === "no_files").length;
+
+  return `
+    <div class="empty-folders-toolbar">
+      <label class="select-all-label">
+        <input type="checkbox" id="empty-folders-select-all" ${allChecked ? "checked" : ""} />
+        Select all shown (${filtered.length})
+      </label>
+      <label class="empty-folders-filter-label">
+        Show
+        <select id="empty-folders-filter" class="empty-folders-filter">
+          <option value="all" ${state.emptyFolderFilter === "all" ? "selected" : ""}>All empty folders (${folders.length})</option>
+          <option value="no_files" ${state.emptyFolderFilter === "no_files" ? "selected" : ""}>Completely empty only (${completelyEmptyCount})</option>
+        </select>
+      </label>
+      <button type="button" class="btn-secondary btn-empty-select-clean" id="btn-empty-select-clean">
+        Select completely empty
+      </button>
+      <button type="button" class="btn-danger btn-empty-remove" id="btn-empty-remove" disabled>
+        Remove selected
+      </button>
+    </div>
+    <table class="items-table unresolved-table empty-folders-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Path</th>
+          <th>Name</th>
+          <th>Reason</th>
+          <th>Items inside</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function updateEmptyFolderButton() {
+  const btn = document.getElementById("btn-empty-remove");
+  if (!btn) return;
+  const count = state.emptyFolderSelection.size;
+  btn.disabled = count === 0;
+  btn.textContent =
+    count === 0 ? "Remove selected" : `Remove selected (${count})`;
+}
+
+function applyEmptyFolderResults(results) {
+  if (!state.scan || !results?.length) return 0;
+
+  const removed = new Set();
+  for (const r of results) {
+    if (r.success && r.path) {
+      removed.add(normalizePath(r.path));
+    }
+  }
+  if (removed.size === 0) return 0;
+
+  state.scan.empty_folders = (state.scan.empty_folders || []).filter(
+    (f) => !removed.has(normalizePath(f.path))
+  );
+  for (const p of [...state.emptyFolderSelection]) {
+    if (removed.has(normalizePath(p))) {
+      state.emptyFolderSelection.delete(p);
+    }
+  }
+
+  recalcSummary();
+  renderFromState();
+  return removed.size;
+}
+
+function openEmptyModal() {
+  const paths = [...state.emptyFolderSelection];
+  if (!paths.length) return;
+  const ul = document.getElementById("empty-modal-paths");
+  ul.innerHTML = paths.map((p) => `<li>${escapeHtml(p)}</li>`).join("");
+  document.getElementById("empty-modal").classList.add("open");
+}
+
+function closeEmptyModal() {
+  document.getElementById("empty-modal").classList.remove("open");
+}
+
+async function confirmEmptyRemove() {
+  const paths = [...state.emptyFolderSelection];
+  closeEmptyModal();
+  if (!paths.length) return;
+
+  try {
+    const res = await fetch("/api/empty-folders/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(apiErrorDetail(data, res.status));
+
+    if (data.scan) state.scan = data.scan;
+    const removed = applyEmptyFolderResults(data.results || []);
+    let msg = `Removed ${data.removed} empty folder(s).`;
+    if (data.failed) msg += ` ${data.failed} failed.`;
+    showMessage(msg);
+    if (removed === 0 && data.removed > 0) {
+      await loadScan();
+    }
+  } catch (err) {
+    showMessage(err.message, "error");
+  }
 }
 
 /** Remove successfully quarantined paths from in-memory scan and re-render. */
@@ -558,6 +753,58 @@ function bindStaticEvents() {
   document.getElementById("modal-confirm").addEventListener("click", confirmQuarantine);
   document.getElementById("btn-rescan").addEventListener("click", triggerRescan);
   document.getElementById("btn-cancel-scan").addEventListener("click", cancelScan);
+
+  document.getElementById("empty-folders").addEventListener("change", (e) => {
+    const folders = state.scan?.empty_folders || [];
+
+    if (e.target.id === "empty-folders-filter") {
+      state.emptyFolderFilter = e.target.value;
+      document.getElementById("empty-folders").innerHTML = renderEmptyFolders(folders);
+      updateEmptyFolderButton();
+      return;
+    }
+
+    if (e.target.id === "empty-folders-select-all") {
+      const visible = getFilteredEmptyFolders(folders);
+      if (e.target.checked) {
+        visible.forEach((f) => state.emptyFolderSelection.add(f.path));
+      } else {
+        visible.forEach((f) => state.emptyFolderSelection.delete(f.path));
+      }
+      document.getElementById("empty-folders").innerHTML = renderEmptyFolders(folders);
+      updateEmptyFolderButton();
+      return;
+    }
+
+    if (e.target.classList.contains("empty-folder-cb")) {
+      const path = e.target.dataset.path;
+      if (e.target.checked) state.emptyFolderSelection.add(path);
+      else state.emptyFolderSelection.delete(path);
+      updateEmptyFolderButton();
+    }
+  });
+
+  document.getElementById("empty-folders").addEventListener("click", (e) => {
+    if (e.target.id === "btn-empty-select-clean") {
+      const folders = state.scan?.empty_folders || [];
+      folders
+        .filter((f) => f.reason === "no_files")
+        .forEach((f) => state.emptyFolderSelection.add(f.path));
+      document.getElementById("empty-folders").innerHTML = renderEmptyFolders(folders);
+      updateEmptyFolderButton();
+      return;
+    }
+
+    if (
+      e.target.id === "btn-empty-remove" ||
+      e.target.classList.contains("btn-empty-remove")
+    ) {
+      openEmptyModal();
+    }
+  });
+
+  document.getElementById("empty-modal-cancel").addEventListener("click", closeEmptyModal);
+  document.getElementById("empty-modal-confirm").addEventListener("click", confirmEmptyRemove);
 }
 
 function collectQuarantinePaths() {

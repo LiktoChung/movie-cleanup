@@ -65,13 +65,15 @@ def main() -> int:
     progress.begin(str(library_path))
     try:
         print(f"Library: {library_path}", file=sys.stderr)
-        items = scan_library(
+        items, empty_folders = scan_library(
             library_path,
             QUARANTINE_PATH,
             show_progress=show_bars,
             reporter=progress,
         )
         print(f"Found {len(items)} movie items (folders + loose files)", file=sys.stderr)
+        if empty_folders:
+            print(f"Found {len(empty_folders)} empty folder(s)", file=sys.stderr)
 
         if not args.no_resolve:
             print("Resolving metadata via TMDB (cached)...", file=sys.stderr)
@@ -92,7 +94,7 @@ def main() -> int:
         progress.set_phase("grouping", "Building duplicate groups")
         if show_bars:
             print("Building duplicate groups...", file=sys.stderr)
-        report = build_duplicate_groups(items)
+        report = build_duplicate_groups(items, empty_folders=empty_folders)
         report["scanned_at"] = datetime.now().isoformat()
         report["library_path"] = str(library_path)
 
@@ -110,6 +112,7 @@ def main() -> int:
         print(f"  Total items:       {s['total_items']}")
         print(f"  Duplicate groups:  {s['duplicate_groups']} ({s['duplicate_items']} items)")
         print(f"  Unresolved:        {s['unresolved']}")
+        print(f"  Empty folders:     {s.get('empty_folders', 0)}")
         print()
         print("Run: python serve.py")
         return 0

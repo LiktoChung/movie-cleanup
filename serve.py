@@ -16,9 +16,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.config import DATA_DIR, LIBRARY_PATH, PORT, PROJECT_ROOT, SCAN_JSON, TMDB_API_KEY
+from src.empty_folders import remove_empty_folders, remove_empty_folders_from_scan
 from src.quarantine import quarantine_paths
 from src.scan_progress import ScanProgress, is_cancel_requested, read_progress, request_cancel
-from src.scan_store import remove_items_from_scan
+from src.scan_store import _norm_path, remove_items_from_scan
 from src.tmdb_client import TmdbClient
 from src.tmdb_lookup import apply_tmdb_match, load_scan_data, search_movies
 
@@ -40,6 +41,10 @@ class QuarantineRequest(BaseModel):
 class ApplyTmdbMatchRequest(BaseModel):
     item_path: str
     tmdb_id: int
+
+
+class RemoveEmptyFoldersRequest(BaseModel):
+    paths: list[str]
 
 
 def _load_scan() -> dict:
@@ -204,6 +209,40 @@ def api_cancel_scan() -> dict:
         _rescan_running = False
 
     return {"status": "cancelled", "progress": read_progress()}
+
+
+@app.post("/api/empty-folders/remove")
+def api_remove_empty_folders(body: RemoveEmptyFoldersRequest) -> dict:
+    if not body.paths:
+        raise HTTPException(status_code=400, detail="No paths to remove")
+
+    scan_data = _load_scan()
+    allowed = {_norm_path(f["path"]) for f in scan_data.get("empty_folders", [])}
+    library_path = scan_data.get("library_path")
+    library_root = Path(library_path) if library_path else LIBRARY_PATH
+
+    results = remove_empty_folders(
+        body.paths,
+        allowed_paths=allowed,
+        library_root=library_root,
+    )
+    removed = [
+        r["path"]
+        for r in results
+        if r.get("success") and not r.get("already_gone")
+    ]
+    if removed or any(r.get("already_gone") for r in results):
+        remove_empty_folders_from_scan(
+            [r["path"] for r in results if r.get("success")]
+        )
+
+    failed = [r for r in results if not r.get("success")]
+    return {
+        "removed": len(removed),
+        "failed": len(failed),
+        "results": results,
+        "scan": _load_scan(),
+    }
 
 
 @app.get("/")

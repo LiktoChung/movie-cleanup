@@ -335,6 +335,81 @@ h2:first-child {
   margin-bottom: 0.5rem;
 }
 
+.empty-folders-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.empty-folders-toolbar .btn-empty-remove {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.empty-folders-filter-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.empty-folders-filter {
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.btn-empty-select-clean {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.empty-folder-files-row td {
+  padding-top: 0;
+  padding-bottom: 0.75rem;
+  border-top: none;
+}
+
+.empty-folder-files {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin-left: 0.25rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--bg);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.empty-folder-files-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+  padding-top: 0.15rem;
+}
+
+.empty-folder-files ul {
+  margin: 0;
+  padding: 0 0 0 1rem;
+  font-size: 0.8rem;
+  font-family: Consolas, monospace;
+  color: var(--text);
+  columns: 2;
+  column-gap: 1.5rem;
+}
+
+.empty-folder-files li {
+  break-inside: avoid;
+  margin-bottom: 0.15rem;
+}
+
 .select-all-label {
   display: flex;
   align-items: center;

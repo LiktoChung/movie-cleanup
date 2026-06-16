@@ -26,7 +26,10 @@ def remove_items_from_scan(removed_paths: list[str]) -> bool:
         i for i in data.get("all_items", []) if _norm_path(i["path"]) not in removed
     ]
     items = [dict_to_item(i) for i in all_items]
-    report = build_duplicate_groups(items)
+    report = build_duplicate_groups(
+        items,
+        empty_folders=data.get("empty_folders", []),
+    )
     report["scanned_at"] = data.get("scanned_at")
     report["library_path"] = data.get("library_path")
 

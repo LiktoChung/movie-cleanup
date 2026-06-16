@@ -1,12 +1,77 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import VIDEO_EXTENSIONS
 from src.nfo import find_nfo, parse_nfo
 from src.parser import parse_name
+
+
+@dataclass
+class EmptyFolder:
+    path: str
+    name: str
+    reason: str  # no_files | no_video
+    file_count: int = 0
+    files: list[str] | None = None
+
+
+def empty_folder_to_dict(folder: EmptyFolder) -> dict:
+    data = {
+        "path": folder.path,
+        "name": folder.name,
+        "reason": folder.reason,
+        "file_count": folder.file_count,
+    }
+    if folder.files:
+        data["files"] = folder.files
+    return data
+
+
+def _list_folder_entries(path: Path) -> list[str]:
+    names: list[str] = []
+    try:
+        entries = sorted(path.iterdir(), key=lambda p: p.name.lower())
+    except OSError:
+        return names
+    for entry in entries:
+        if entry.name in (".", ".."):
+            continue
+        names.append(f"{entry.name}/" if entry.is_dir() else entry.name)
+    return names
+
+
+def classify_empty_folder(path: Path) -> EmptyFolder:
+    """Folder at library root with no video files."""
+    try:
+        entries = [e for e in path.iterdir() if e.name not in (".", "..")]
+    except OSError:
+        return EmptyFolder(
+            path=str(path),
+            name=path.name,
+            reason="no_files",
+            file_count=0,
+            files=[],
+        )
+
+    if not entries:
+        return EmptyFolder(
+            path=str(path),
+            name=path.name,
+            reason="no_files",
+            file_count=0,
+            files=[],
+        )
+
+    return EmptyFolder(
+        path=str(path),
+        name=path.name,
+        reason="no_video",
+        file_count=len(entries),
+        files=_list_folder_entries(path),
+    )
 
 
 @dataclass
@@ -44,7 +109,7 @@ def _is_video(path: Path) -> bool:
     return path.suffix.lower() in VIDEO_EXTENSIONS
 
 
-def _collect_videos(directory: Path) -> list[Path]:
+def collect_videos(directory: Path) -> list[Path]:
     """Collect video files in directory (non-recursive for performance)."""
     videos: list[Path] = []
     try:
@@ -83,11 +148,12 @@ def scan_library(
     *,
     show_progress: bool = True,
     reporter: object | None = None,
-) -> list[LibraryItem]:
+) -> tuple[list[LibraryItem], list[dict]]:
     """Scan library root: one item per movie folder or loose video file."""
     from src.progress import track
 
     items: list[LibraryItem] = []
+    empty_folders: list[EmptyFolder] = []
     quarantine_resolved = quarantine_path.resolve() if quarantine_path else None
 
     try:
@@ -129,8 +195,10 @@ def scan_library(
             item = _build_folder_item(entry)
             if item is not None:
                 items.append(item)
+            else:
+                empty_folders.append(classify_empty_folder(entry))
 
-    return items
+    return items, [empty_folder_to_dict(f) for f in empty_folders]
 
 
 def _build_file_item(path: Path) -> LibraryItem:
@@ -155,7 +223,7 @@ def _build_file_item(path: Path) -> LibraryItem:
 
 
 def _build_folder_item(path: Path) -> LibraryItem | None:
-    videos = _collect_videos(path)
+    videos = collect_videos(path)
     if not videos:
         return None
 

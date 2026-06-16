@@ -49,6 +49,11 @@
         These items were not grouped automatically. Check any you want to move to quarantine.
       </p>
       <div id="unresolved"></div>
+      <h2>Empty folders</h2>
+      <p style="color:var(--muted);font-size:0.85rem;margin-top:0">
+        Folders with no video files (completely empty or leftover junk). Removing deletes them permanently.
+      </p>
+      <div id="empty-folders"></div>
     </div>
   </main>
 
@@ -68,6 +73,22 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=7"></script>
+  <div class="modal-overlay" id="empty-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Remove empty folders</h3>
+        <p>The following folders will be <strong>permanently deleted</strong>:</p>
+      </div>
+      <div class="modal-body">
+        <ul id="empty-modal-paths"></ul>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="empty-modal-cancel">Cancel</button>
+        <button class="btn-danger" id="empty-modal-confirm">Delete folders</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=9"></script>
 </body>
 </html>

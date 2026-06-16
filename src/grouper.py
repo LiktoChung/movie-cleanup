@@ -34,8 +34,13 @@ def assign_keeper_scores(items: list[LibraryItem]) -> None:
         item.keeper_score = _keeper_score(item)
 
 
-def build_duplicate_groups(items: list[LibraryItem]) -> dict:
+def build_duplicate_groups(
+    items: list[LibraryItem],
+    *,
+    empty_folders: list[dict] | None = None,
+) -> dict:
     """Build scan output structure with duplicate groups and unresolved items."""
+    empty_folders = empty_folders or []
     assign_keeper_scores(items)
 
     by_key: dict[str, list[LibraryItem]] = defaultdict(list)
@@ -81,8 +86,10 @@ def build_duplicate_groups(items: list[LibraryItem]) -> dict:
             "duplicate_groups": len(duplicate_groups),
             "duplicate_items": sum(len(g["items"]) for g in duplicate_groups),
             "unresolved": len(unresolved),
+            "empty_folders": len(empty_folders),
         },
         "duplicate_groups": duplicate_groups,
         "unresolved": [item_to_dict(i) for i in unresolved],
+        "empty_folders": empty_folders,
         "all_items": [item_to_dict(i) for i in items],
     }

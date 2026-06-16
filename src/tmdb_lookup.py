@@ -210,7 +210,10 @@ def apply_tmdb_match(item_path: str, tmdb_id: int, client: TmdbClient) -> dict:
     found.group_key = f"tmdb:{movie.tmdb_id}"
     found.unresolved_reason = None
 
-    report = build_duplicate_groups(items)
+    report = build_duplicate_groups(
+        items,
+        empty_folders=data.get("empty_folders", []),
+    )
     report["scanned_at"] = data.get("scanned_at")
     report["library_path"] = data.get("library_path")
 
